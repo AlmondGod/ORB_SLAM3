@@ -398,7 +398,7 @@ Sophus::SE3f System::TrackRGBD(const cv::Mat &im, const cv::Mat &depthmap, const
 
 Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const double &timestamp, const vector<IMU::Point>& vImuMeas, string filename)
 {
-
+    cout << "TrackMonocular running" << endl;
     {
         unique_lock<mutex> lock(mMutexReset);
         if(mbShutDown)
@@ -411,64 +411,162 @@ Sophus::SE3f System::TrackMonocular(const cv::Mat &im, const double &timestamp, 
         exit(-1);
     }
 
-    cv::Mat imToFeed = im.clone();
-    if(settings_ && settings_->needToResize()){
-        cv::Mat resizedIm;
-        cv::resize(im,resizedIm,settings_->newImSize());
-        imToFeed = resizedIm;
+    cout << "Part 1 passed" << endl;
+
+    cv::Mat imToFeed;
+    try {
+        imToFeed = im.clone();
+        if(imToFeed.empty()) {
+            cerr << "ERROR: Input image is empty." << endl;
+            return Sophus::SE3f();
+        }
+    } catch (const cv::Exception& e) {
+        cerr << "OpenCV exception when cloning image: " << e.what() << endl;
+        return Sophus::SE3f();
     }
+
+    cout << "Part 2 passed" << endl;
+
+    if(settings_ && settings_->needToResize()){
+        try {
+            cv::Mat resizedIm;
+            cv::resize(imToFeed, resizedIm, settings_->newImSize());
+            imToFeed = resizedIm;
+        } catch (const cv::Exception& e) {
+            cerr << "OpenCV exception when resizing image: " << e.what() << endl;
+            return Sophus::SE3f();
+        }
+    }
+
+    cout << "Part 3 passed" << endl;
 
     // Check mode change
     {
         unique_lock<mutex> lock(mMutexMode);
         if(mbActivateLocalizationMode)
         {
-            mpLocalMapper->RequestStop();
+            if(mpLocalMapper) {
+                mpLocalMapper->RequestStop();
 
-            // Wait until Local Mapping has effectively stopped
-            while(!mpLocalMapper->isStopped())
-            {
-                usleep(1000);
+                // Wait until Local Mapping has effectively stopped
+                while(!mpLocalMapper->isStopped())
+                {
+                    usleep(1000);
+                }
+            } else {
+                cerr << "WARNING: mpLocalMapper is null when trying to activate localization mode." << endl;
             }
 
-            mpTracker->InformOnlyTracking(true);
+            if(mpTracker)
+                mpTracker->InformOnlyTracking(true);
+            else
+                cerr << "WARNING: mpTracker is null when trying to inform only tracking." << endl;
+
             mbActivateLocalizationMode = false;
         }
         if(mbDeactivateLocalizationMode)
         {
-            mpTracker->InformOnlyTracking(false);
-            mpLocalMapper->Release();
+            if(mpTracker)
+                mpTracker->InformOnlyTracking(false);
+            else
+                cerr << "WARNING: mpTracker is null when trying to inform tracking." << endl;
+
+            if(mpLocalMapper)
+                mpLocalMapper->Release();
+            else
+                cerr << "WARNING: mpLocalMapper is null when trying to release." << endl;
+
             mbDeactivateLocalizationMode = false;
         }
     }
+
+    cout << "Part 4 passed" << endl;
 
     // Check reset
     {
         unique_lock<mutex> lock(mMutexReset);
         if(mbReset)
         {
-            mpTracker->Reset();
+            if(mpTracker)
+                mpTracker->Reset();
+            else
+                cerr << "WARNING: mpTracker is null when trying to reset." << endl;
             mbReset = false;
             mbResetActiveMap = false;
         }
         else if(mbResetActiveMap)
         {
-            cout << "SYSTEM-> Reseting active map in monocular case" << endl;
-            mpTracker->ResetActiveMap();
+            cout << "SYSTEM-> Resetting active map in monocular case" << endl;
+            if(mpTracker)
+                mpTracker->ResetActiveMap();
+            else
+                cerr << "WARNING: mpTracker is null when trying to reset active map." << endl;
             mbResetActiveMap = false;
         }
     }
 
-    if (mSensor == System::IMU_MONOCULAR)
+    cout << "Part 5 passed" << endl;
+
+    if (mSensor == System::IMU_MONOCULAR && mpTracker)
+    {
         for(size_t i_imu = 0; i_imu < vImuMeas.size(); i_imu++)
-            mpTracker->GrabImuData(vImuMeas[i_imu]);
+        {
+            try {
+                mpTracker->GrabImuData(vImuMeas[i_imu]);
 
-    Sophus::SE3f Tcw = mpTracker->GrabImageMonocular(imToFeed,timestamp,filename);
+                cout << "mptracker: " << mpTracker << endl;
+            } catch (const std::exception& e) {
+                cerr << "Exception in GrabImuData: " << e.what() << endl;
+            }
+        }
+    }
 
-    unique_lock<mutex> lock2(mMutexState);
-    mTrackingState = mpTracker->mState;
-    mTrackedMapPoints = mpTracker->mCurrentFrame.mvpMapPoints;
-    mTrackedKeyPointsUn = mpTracker->mCurrentFrame.mvKeysUn;
+    cout << "Part 6 passed" << endl;
+
+    Sophus::SE3f Tcw;
+
+    cout << "Part 6.1 passed" << endl;
+
+    if(mpTracker)
+    {
+        cout << "Part 6.2 passed" << endl;
+        try {
+            Tcw = mpTracker->GrabImageMonocular(imToFeed, timestamp, filename);
+
+            cout << "Part 6.3 passed" << endl;
+        } catch (const std::exception& e) {
+            cerr << "Exception in GrabImageMonocular: " << e.what() << endl;
+            return Sophus::SE3f();
+        } catch (...) {
+            cerr << "Unknown exception in GrabImageMonocular" << endl;
+            return Sophus::SE3f();
+        }
+    }
+    else
+    {
+        cerr << "ERROR: mpTracker is null when trying to grab image." << endl;
+        return Sophus::SE3f();
+    }
+
+    cout << "Part 7 passed" << endl;
+
+    {
+        unique_lock<mutex> lock2(mMutexState);
+
+        cout << "1. mpTracker->mState: " << mpTracker->mState << endl;
+
+        mTrackingState = mpTracker->mState;
+
+        cout << "2. mpTracker->mCurrentFrame.mvpMapPoints.size(): " << mpTracker->mCurrentFrame.mvpMapPoints.size() << endl;
+
+        mTrackedMapPoints = mpTracker->mCurrentFrame.mvpMapPoints;
+
+        cout << "3. mpTracker->mCurrentFrame.mvKeysUn.size(): " << mpTracker->mCurrentFrame.mvKeysUn.size() << endl;
+
+        mTrackedKeyPointsUn = mpTracker->mCurrentFrame.mvKeysUn;
+    }
+
+    cout << "Part 8 passed" << endl;
 
     return Tcw;
 }
@@ -1543,6 +1641,60 @@ string System::CalculateCheckSum(string filename, int type)
     }
 
     return checksum;
+}
+
+void System::SaveMapPoints(const string &filename)
+{
+    cout << endl << "Saving map points to " << filename << " ..." << endl;
+
+    vector<Map*> vpMaps = mpAtlas->GetAllMaps();
+    Map* pBiggerMap = nullptr;
+    int numMaxMPs = 0;
+    for(Map* pMap : vpMaps)
+    {
+        if(pMap && pMap->GetAllMapPoints().size() > numMaxMPs)
+        {
+            numMaxMPs = pMap->GetAllMapPoints().size();
+            pBiggerMap = pMap;
+        }
+    }
+
+    if(!pBiggerMap)
+    {
+        cout << "There is no map!" << endl;
+        return;
+    }
+
+    vector<MapPoint*> vpMPs = pBiggerMap->GetAllMapPoints();
+
+    ofstream f;
+    f.open(filename.c_str(), ios_base::out | ios_base::trunc);
+    f << fixed;
+
+    for(size_t i=0; i<vpMPs.size(); i++)
+    {
+        MapPoint* pMP = vpMPs[i];
+        if(pMP->isBad())
+            continue;
+
+        Eigen::Vector3f pos = pMP->GetWorldPos();
+        
+        f << "MP" << pMP->mnId << " " << setprecision(9) 
+          << pos(0) << " " << pos(1) << " " << pos(2) << " ";
+
+        // Save keyframe associations
+        const map<KeyFrame*, tuple<int,int>> observations = pMP->GetObservations();
+        f << observations.size();
+        for(const auto& obs : observations)
+        {
+            KeyFrame* pKF = obs.first;
+            f << " " << pKF->mnId;
+        }
+        f << endl;
+    }
+
+    f.close();
+    cout << endl << "Map points saved to " << filename << endl;
 }
 
 } //namespace ORB_SLAM

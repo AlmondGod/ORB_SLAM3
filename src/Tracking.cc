@@ -1565,9 +1565,12 @@ Sophus::SE3f Tracking::GrabImageRGBD(const cv::Mat &imRGB,const cv::Mat &imD, co
 
 Sophus::SE3f Tracking::GrabImageMonocular(const cv::Mat &im, const double &timestamp, string filename)
 {
+    cout << "Entering GrabImageMonocular" << endl;
+
     mImGray = im;
     if(mImGray.channels()==3)
     {
+        cout << "Converting 3-channel image to grayscale" << endl;
         if(mbRGB)
             cvtColor(mImGray,mImGray,cv::COLOR_RGB2GRAY);
         else
@@ -1575,28 +1578,59 @@ Sophus::SE3f Tracking::GrabImageMonocular(const cv::Mat &im, const double &times
     }
     else if(mImGray.channels()==4)
     {
+        cout << "Converting 4-channel image to grayscale" << endl;
         if(mbRGB)
             cvtColor(mImGray,mImGray,cv::COLOR_RGBA2GRAY);
         else
             cvtColor(mImGray,mImGray,cv::COLOR_BGRA2GRAY);
     }
 
+    cout << "Image converted to grayscale" << endl;
+
     if (mSensor == System::MONOCULAR)
     {
+        cout << "Sensor is MONOCULAR" << endl;
         if(mState==NOT_INITIALIZED || mState==NO_IMAGES_YET ||(lastID - initID) < mMaxFrames)
+        {
+            cout << "Creating frame with mpIniORBextractor" << endl;
+            if (!mpIniORBextractor) cout << "WARNING: mpIniORBextractor is null" << endl;
+            if (!mpORBVocabulary) cout << "WARNING: mpORBVocabulary is null" << endl;
+            if (!mpCamera) cout << "WARNING: mpCamera is null" << endl;
             mCurrentFrame = Frame(mImGray,timestamp,mpIniORBextractor,mpORBVocabulary,mpCamera,mDistCoef,mbf,mThDepth);
+        }
         else
+        {
+            cout << "Creating frame with mpORBextractorLeft" << endl;
+            if (!mpORBextractorLeft) cout << "WARNING: mpORBextractorLeft is null" << endl;
+            if (!mpORBVocabulary) cout << "WARNING: mpORBVocabulary is null" << endl;
+            if (!mpCamera) cout << "WARNING: mpCamera is null" << endl;
             mCurrentFrame = Frame(mImGray,timestamp,mpORBextractorLeft,mpORBVocabulary,mpCamera,mDistCoef,mbf,mThDepth);
+        }
     }
     else if(mSensor == System::IMU_MONOCULAR)
     {
+        cout << "Sensor is IMU_MONOCULAR" << endl;
         if(mState==NOT_INITIALIZED || mState==NO_IMAGES_YET)
         {
+            cout << "Creating frame with mpIniORBextractor and IMU" << endl;
+            if (!mpIniORBextractor) cout << "WARNING: mpIniORBextractor is null" << endl;
+            if (!mpORBVocabulary) cout << "WARNING: mpORBVocabulary is null" << endl;
+            if (!mpCamera) cout << "WARNING: mpCamera is null" << endl;
+            if (!mpImuCalib) cout << "WARNING: mpImuCalib is null" << endl;
             mCurrentFrame = Frame(mImGray,timestamp,mpIniORBextractor,mpORBVocabulary,mpCamera,mDistCoef,mbf,mThDepth,&mLastFrame,*mpImuCalib);
         }
         else
+        {
+            cout << "Creating frame with mpORBextractorLeft and IMU" << endl;
+            if (!mpORBextractorLeft) cout << "WARNING: mpORBextractorLeft is null" << endl;
+            if (!mpORBVocabulary) cout << "WARNING: mpORBVocabulary is null" << endl;
+            if (!mpCamera) cout << "WARNING: mpCamera is null" << endl;
+            if (!mpImuCalib) cout << "WARNING: mpImuCalib is null" << endl;
             mCurrentFrame = Frame(mImGray,timestamp,mpORBextractorLeft,mpORBVocabulary,mpCamera,mDistCoef,mbf,mThDepth,&mLastFrame,*mpImuCalib);
+        }
     }
+
+    cout << "Frame created successfully" << endl;
 
     if (mState==NO_IMAGES_YET)
         t0=timestamp;
@@ -1604,13 +1638,19 @@ Sophus::SE3f Tracking::GrabImageMonocular(const cv::Mat &im, const double &times
     mCurrentFrame.mNameFile = filename;
     mCurrentFrame.mnDataset = mnNumDataset;
 
+    cout << "Frame metadata set" << endl;
+
 #ifdef REGISTER_TIMES
     vdORBExtract_ms.push_back(mCurrentFrame.mTimeORB_Ext);
 #endif
 
     lastID = mCurrentFrame.mnId;
-    Track();
 
+    cout << "Calling Track()" << endl;
+    Track();
+    cout << "Track() completed" << endl;
+
+    cout << "Exiting GrabImageMonocular" << endl;
     return mCurrentFrame.GetPose();
 }
 
@@ -1819,7 +1859,7 @@ void Tracking::Track()
     {
         if(mLastFrame.mTimeStamp>mCurrentFrame.mTimeStamp)
         {
-            cerr << "ERROR: Frame with a timestamp older than previous frame detected!" << endl;
+            cout << "ERROR: Frame with a timestamp older than previous frame detected!" << endl;
             unique_lock<mutex> lock(mMutexImuQueue);
             mlQueueImuData.clear();
             CreateMapInAtlas();
@@ -1827,8 +1867,8 @@ void Tracking::Track()
         }
         else if(mCurrentFrame.mTimeStamp>mLastFrame.mTimeStamp+1.0)
         {
-            // cout << mCurrentFrame.mTimeStamp << ", " << mLastFrame.mTimeStamp << endl;
-            // cout << "id last: " << mLastFrame.mnId << "    id curr: " << mCurrentFrame.mnId << endl;
+            cout << mCurrentFrame.mTimeStamp << ", " << mLastFrame.mTimeStamp << endl;
+            cout << "id last: " << mLastFrame.mnId << "    id curr: " << mCurrentFrame.mnId << endl;
             if(mpAtlas->isInertial())
             {
 
@@ -1895,15 +1935,19 @@ void Tracking::Track()
         mbMapUpdated = true;
     }
 
+    cout << "Got here and mbMapUpdated is " << mbMapUpdated << endl;
 
     if(mState==NOT_INITIALIZED)
     {
+        cout << "TRACK: System is not initialized" << endl;
         if(mSensor==System::STEREO || mSensor==System::RGBD || mSensor==System::IMU_STEREO || mSensor==System::IMU_RGBD)
         {
+            cout << "Stereo initialization" << endl;
             StereoInitialization();
         }
         else
         {
+            cout << "Monocular initialization" << endl;
             MonocularInitialization();
         }
 
@@ -1911,17 +1955,20 @@ void Tracking::Track()
 
         if(mState!=OK) // If rightly initialized, mState=OK
         {
+            cout << "TRACK: System is not initialized" << endl;
             mLastFrame = Frame(mCurrentFrame);
             return;
         }
 
         if(mpAtlas->GetAllMaps().size() == 1)
         {
+            cout << "TRACK: First map created" << endl;
             mnFirstFrameId = mCurrentFrame.mnId;
         }
     }
     else
     {
+        cout << "TRACK: System is initialized. Track Frame." << endl;
         // System is initialized. Track Frame.
         bool bOK;
 
@@ -1929,6 +1976,7 @@ void Tracking::Track()
         std::chrono::steady_clock::time_point time_StartPosePred = std::chrono::steady_clock::now();
 #endif
 
+        cout << "TRACK: Predict IMU state" << endl;
         // Initial camera pose estimation using motion model or relocalization (if tracking is lost)
         if(!mbOnlyTracking)
         {
@@ -2115,10 +2163,10 @@ void Tracking::Track()
         vdPosePred_ms.push_back(timePosePred);
 #endif
 
-
 #ifdef REGISTER_TIMES
         std::chrono::steady_clock::time_point time_StartLMTrack = std::chrono::steady_clock::now();
 #endif
+        cout << "bOK: " << bOK << endl;
         // If we have an initial estimation of the camera pose and matching. Track the local map.
         if(!mbOnlyTracking)
         {
@@ -2196,7 +2244,7 @@ void Tracking::Track()
         double timeLMTrack = std::chrono::duration_cast<std::chrono::duration<double,std::milli> >(time_EndLMTrack - time_StartLMTrack).count();
         vdLMTrack_ms.push_back(timeLMTrack);
 #endif
-
+        cout << "TrackLocalMap() completed" << endl;
         // Update drawer
         mpFrameDrawer->Update(this);
         if(mCurrentFrame.isSet())
@@ -2241,7 +2289,10 @@ void Tracking::Track()
 #ifdef REGISTER_TIMES
             std::chrono::steady_clock::time_point time_StartNewKF = std::chrono::steady_clock::now();
 #endif
+            cout << "Checking if we need a new keyframe" << endl;
             bool bNeedKF = NeedNewKeyFrame();
+
+            cout << "bNeedKF: " << bNeedKF << endl;
 
             // Check if we need to insert a new keyframe
             // if(bNeedKF && bOK)
@@ -2448,11 +2499,14 @@ void Tracking::StereoInitialization()
 void Tracking::MonocularInitialization()
 {
 
+    cout << "Monocular initialization" << endl;
     if(!mbReadyToInitializate)
     {
+        cout << "Not ready to initialize" << endl;
         // Set Reference Frame
         if(mCurrentFrame.mvKeys.size()>100)
         {
+            cout << "Setting reference frame" << endl;
 
             mInitialFrame = Frame(mCurrentFrame);
             mLastFrame = Frame(mCurrentFrame);
@@ -2464,6 +2518,7 @@ void Tracking::MonocularInitialization()
 
             if (mSensor == System::IMU_MONOCULAR)
             {
+                cout << "IMU initialization" << endl;
                 if(mpImuPreintegratedFromLastKF)
                 {
                     delete mpImuPreintegratedFromLastKF;
@@ -2480,29 +2535,40 @@ void Tracking::MonocularInitialization()
     }
     else
     {
+        cout << "Ready to initialize 2" << endl;
         if (((int)mCurrentFrame.mvKeys.size()<=100)||((mSensor == System::IMU_MONOCULAR)&&(mLastFrame.mTimeStamp-mInitialFrame.mTimeStamp>1.0)))
         {
+            cout << "Not enough keypoints or time" << endl;
             mbReadyToInitializate = false;
 
             return;
         }
+
+
 
         // Find correspondences
         ORBmatcher matcher(0.9,true);
         int nmatches = matcher.SearchForInitialization(mInitialFrame,mCurrentFrame,mvbPrevMatched,mvIniMatches,100);
 
+        cout << "Found " << nmatches << " matches" << endl;
+
         // Check if there are enough correspondences
         if(nmatches<100)
         {
+            cout << "Not enough matches" << endl;
             mbReadyToInitializate = false;
             return;
         }
 
+
+
         Sophus::SE3f Tcw;
         vector<bool> vbTriangulated; // Triangulated Correspondences (mvIniMatches)
 
+
         if(mpCamera->ReconstructWithTwoViews(mInitialFrame.mvKeysUn,mCurrentFrame.mvKeysUn,mvIniMatches,Tcw,mvIniP3D,vbTriangulated))
         {
+            cout << "Reconstructed with two views" << endl;
             for(size_t i=0, iend=mvIniMatches.size(); i<iend;i++)
             {
                 if(mvIniMatches[i]>=0 && !vbTriangulated[i])
@@ -2516,8 +2582,14 @@ void Tracking::MonocularInitialization()
             mInitialFrame.SetPose(Sophus::SE3f());
             mCurrentFrame.SetPose(Tcw);
 
+            cout << "Set frame poses" << endl;
+
             CreateInitialMapMonocular();
+
+            cout << "Created initial map" << endl;
         }
+
+        cout << "Not reconstructed with two views" << endl;
     }
 }
 
@@ -3241,6 +3313,7 @@ void Tracking::CreateNewKeyFrame()
     // Reset preintegration from last KF (Create new object)
     if (mSensor == System::IMU_MONOCULAR || mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD)
     {
+        cout << "Create new IMU preintegrated" << endl;
         mpImuPreintegratedFromLastKF = new IMU::Preintegrated(pKF->GetImuBias(),pKF->mImuCalib);
     }
 

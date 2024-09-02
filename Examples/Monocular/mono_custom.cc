@@ -1,3 +1,9 @@
+/*
+vocab: /home/almondgod/ORB_SLAM3/Vocabulary/ORBvoc.txt 
+camera settings: ORB_SLAM3/Examples/Monocular/raspicam_v2_1640x1232.yaml
+./mono_custom /home/almondgod/ORB_SLAM3/Vocabulary/ORBvoc.txt ORB_SLAM3/Examples/Monocular/raspicam_v2_1640x1232.yaml /images /images/timestamps.txt
+*/
+
 /**
 * This file is part of ORB-SLAM3
 *
@@ -29,12 +35,16 @@ using namespace std;
 
 void LoadImages(const string &strImagePath, const string &strPathTimes,
                 vector<string> &vstrImages, vector<double> &vTimeStamps);
+void ProcessNewImages(ORB_SLAM3::System& SLAM, const string& imagePath, const string& timestampPath);
+
+bool gIsRunning = true;
+mutex gMutex;
 
 int main(int argc, char **argv)
 {  
-    if(argc < 5)
+    if(argc != 3)
     {
-        cerr << endl << "Usage: ./mono_euroc /home/almondgod/ORB_SLAM3/Vocabulary/ORBvoc.txt ORB_SLAM3/Examples/Monocular/raspicam_v2_1640x1232.yaml path_to_sequence_folder_1 path_to_times_file_1 (path_to_image_folder_2 path_to_times_file_2 ... path_to_image_folder_N path_to_times_file_N) (trajectory_file_name)" << endl;
+        cerr << endl << "Usage: ./mono_custom path_to_vocabulary path_to_settings" << endl;
         return 1;
     }
 
@@ -218,11 +228,11 @@ void LoadImages(const string &strImagePath, const string &strPathTimes,
         {
             stringstream ss;
             ss << s;
-            vstrImages.push_back(strImagePath + "/" + ss.str() + ".png");
             double t;
-            ss >> t;
-            vTimeStamps.push_back(t*1e-9);
-
+            string sRGB;
+            ss >> t >> sRGB;
+            vTimeStamps.push_back(t);
+            vstrImages.push_back(strImagePath + "/" + sRGB);
         }
     }
 }
